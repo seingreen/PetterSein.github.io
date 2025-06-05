@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaPipe Face Audio System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: white;
+            color: black;
+            margin: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ccc;
+        }
+        
+        .video-container {
+            position: relative;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        
+        video {
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid #ccc;
+            transform: scaleX(-1); /* Mirror the video */
+        }
+        
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%) scaleX(-1); /* Mirror and center the canvas */
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid #ccc;
+        }
+        
+        .data {
+            margin: 10px 0;
+        }
+        
+        .chords {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        button {
+            padding: 10px;
+            border: 1px solid #ccc;
+            background: white;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #f0f0f0;
+        }
+        
+        .controls {
+            margin: 20px 0;
+        }
+        
+        .controls button {
+            margin-right: 10px;
+        }
+        
+        .hats {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        
+        .mouth-indicator {
+            background: #28a745;
+            height: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            transition: width 0.1s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MediaPipe Face Audio System</h1>
+        
+        <div class="section">
+            <h3>Face Tracking</h3>
+            <div class="video-container">
+                <video id="video" autoplay muted playsinline></video>
+                <canvas id="canvas"></canvas>
+            </div>
+            <div class="data">Mouth Width: <span id="mouthWidth">10.0</span></div>
+            <div class="data">Sine Frequency: <span id="sineFreq">220Hz</span></div>
+            <div class="mouth-indicator" id="mouthIndicator" style="width: 0%;"></div>
+        </div>
+        
+        <div class="section">
+            <h3>Hat Selection</h3>
+            <div class="hats">
+                <button onclick="selectHat('none')">No Hat</button>
+                <button onclick="selectHat('crown')">👑 Crown</button>
+                <button onclick="selectHat('tophat')">🎩 Top Hat</button>
+                <button onclick="selectHat('cap')">🧢 Baseball Cap</button>
+                <button onclick="selectHat('beret')">🎨 Beret</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>Impressionist Chords</h3>
+            <div class="chords">
+                <button onclick="playChord(0)">C - Cmaj7</button>
+                <button onclick="playChord(1)">G - F#dim</button>
+                <button onclick="playChord(2)">F - Fmaj7</button>
+                <button onclick="playChord(3)">E - Em7</button>
+                <button onclick="playChord(4)">D - Cdim</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>Sound File Upload</h3>
+            <input type="file" id="audioFile" accept="audio/*" onchange="loadAudioFile(event)">
+            <div class="controls">
+                <button onclick="playUploadedSound()">Play Uploaded</button>
+                <button onclick="stopUploadedSound()">Stop Uploaded</button>
+                <button onclick="toggleLoopUploadedSound()">Toggle Loop</button>
+            </div>
+            <div class="data">File: <span id="uploadedFileName">None</span></div>
+            <div class="data">Loop: <span id="loopStatus">OFF</span></div>
+        </div>
+        
+        <div class="section">
+            <h3>Controls</h3>
+            <div class="controls">
+                <button onclick="startAudio()">Start Audio</button>
+                <button onclick="stopAudio()">Stop Audio</button>
+                <button onclick="toggleMute()">Toggle Mute</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>Sound Layers</h3>
+            <div class="controls">
+                <button onclick="playSnowCluster()">Snow Cluster</button>
+                <button onclick="playBirdChirp()">Bird Chirp</button>
+                <button onclick="toggleDripping()">Toggle Dripping</button>
+                <button onclick="toggleNoise()">Toggle Noise</button>
+            </div>
+        </div>
+        
+        <div id="status">Initializing MediaPipe...</div>
+    </div>
+
+    <script>
+        // MediaPipe Face Mesh
+        let faceMesh;
+        let camera;
+        let video, canvas, ctx;
+        let currentHat = 'none';
+        let isAudioStarted = false;
+        let isMuted = false;
+        
+        // Face tracking data
+        let currentMouthWidth = 10.0; // FaceOSC style: 10-16 range
+        let mouthOpenness = 0; // 0-1 range for effects
+        
+        // Audio components
+        let masterGain;
+        let oscillator, reverb;
+        let dripSound, snowPiano, birdSynth, ambientNoise, glassArpeggiator;
+        let isDrippingActive = false;
+        let isNoiseActive = false;
+        
+        // Uploaded sound
+        let uploadedPlayer = null;
+        let uploadedBuffer = null;
+        let isUploadedLooping = false;
+        let isUploadedPlaying = false;
+        
+        // Hat configurations
+        const hats = {
+            none: { color: null },
+            crown: { color: '#FFD700', symbol: '👑' },
+            tophat: { color: '#2C3E50', symbol: '🎩' },
+            cap: { color: '#FF6B6B', symbol: '🧢' },
+            beret: { color: '#8B4513', symbol: '🎨' }
+        };
+        
+        // Chord progression
+        const chords = [
+            [60, 64, 67, 72],  // Cmaj7
+            [66, 69, 72, 75],  // F#dim
+            [65, 69, 72, 77],  // Fmaj7
+            [64, 67, 71, 76],  // Em7
+            [62, 65, 68, 71]   // Cdim
+        ];
+        
+        function init() {
+            setupCamera();
+            setupAudio();
+            setupMediaPipe();
+        }
+        
+        async function setupCamera() {
+            video = document.getElementById('video');
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            
+            try {
+                camera = new Camera(video, {
+                    onFrame: async () => {
+                        await faceMesh.send({image: video});
+                    },
+                    width: 640,
+                    height: 480
+                });
+                
+                canvas.width = 640;
+                canvas.height = 480;
+                
+                document.getElementById('status').textContent = 'Camera ready - MediaPipe active';
+            } catch (err) {
+                console.error('Camera error:', err);
+                document.getElementById('status').textContent = 'Camera access denied';
+            }
+        }
+        
+        function setupAudio() {
+            // Master chain
+            masterGain = new Tone.Gain(0.8).toDestination();
+            
+            // Create reverb effect
+            reverb = new Tone.Reverb({
+                decay: 2,
+                preDelay: 0.01,
+                wet: 0
+            }).connect(masterGain);
+            
+            // Create oscillator - pure sine wave
+            oscillator = new Tone.Oscillator(220, 'sine');
+            oscillator.volume.value = -15;
+            oscillator.connect(reverb);
+            
+            setupComponents();
+        }
+        
+        function setupComponents() {
+            // Dripping sound
+            dripSound = {
+                gain: new Tone.Gain(0.3).connect(masterGain),
+                isPlaying: false,
+                
+                start() {
+                    if (this.isPlaying) return;
+                    this.isPlaying = true;
+                    this.playDrip();
+                },
+                
+                stop() {
+                    this.isPlaying = false;
+                },
+                
+                async playDrip() {
+                    while (this.isPlaying) {
+                        const noise = new Tone.Noise('pink');
+                        const filter = new Tone.Filter(800, 'lowpass');
+                        const env = new Tone.AmplitudeEnvelope({
+                            attack: 0.01,
+                            decay: 0.1,
+                            sustain: 0,
+                            release: 0.3
+                        });
+                        
+                        noise.connect(filter).connect(env).connect(this.gain);
+                        noise.start();
+                        env.triggerAttackRelease(0.1);
+                        
+                        setTimeout(() => {
+                            noise.stop();
+                            noise.dispose();
+                            filter.dispose();
+                            env.dispose();
+                        }, 500);
+                        
+                        await new Promise(resolve => 
+                            setTimeout(resolve, Math.random() * 3000 + 1000)
+                        );
+                    }
+                }
+            };
+            
+            // Snow piano
+            snowPiano = {
+                gain: new Tone.Gain(0.7).connect(masterGain),
+                
+                playNote() {
+                    const note = Math.floor(Math.random() * 25) + 72;
+                    const freq = Tone.Frequency(note, 'midi').toFrequency();
+                    
+                    const main = new Tone.Oscillator(freq, 'sine');
+                    const sub = new Tone.Oscillator(freq / 2, 'triangle');
+                    const env = new Tone.AmplitudeEnvelope({
+                        attack: 0.05,
+                        decay: 0.2,
+                        sustain: 0.3,
+                        release: 0.3
+                    });
+                    const echo = new Tone.FeedbackDelay(0.25, 0.4);
+                    const lpf = new Tone.Filter(3000, 'lowpass');
+                    
+                    main.connect(env).connect(echo).connect(lpf).connect(this.gain);
+                    sub.connect(env);
+                    
+                    main.start();
+                    sub.start();
+                    env.triggerAttackRelease(0.4);
+                    
+                    setTimeout(() => {
+                        main.stop();
+                        sub.stop();
+                        main.dispose();
+                        sub.dispose();
+                        env.dispose();
+                        echo.dispose();
+                        lpf.dispose();
+                    }, 1000);
+                },
+                
+                async playCluster() {
+                    for (let i = 0; i < 4; i++) {
+                        this.playNote();
+                        await new Promise(resolve => 
+                            setTimeout(resolve, Math.random() * 100 + 50)
+                        );
+                    }
+                }
+            };
+            
+            // Bird synth
+            birdSynth = {
+                gain: new Tone.Gain(0.5).connect(masterGain),
+                
+                chirp() {
+                    const baseFreq = Math.random() * 2000 + 2000;
+                    const carrier = new Tone.Oscillator(baseFreq, 'sine');
+                    const modulator = new Tone.Oscillator(baseFreq * 2, 'sine');
+                    const env = new Tone.AmplitudeEnvelope({
+                        attack: 0.001,
+                        decay: 0.01,
+                        sustain: 0,
+                        release: 0.005
+                    });
+                    
+                    modulator.connect(carrier.frequency);
+                    carrier.connect(env).connect(this.gain);
+                    
+                    carrier.start();
+                    modulator.start();
+                    
+                    for (let i = 0; i < 20; i++) {
+                        const sweepFreq = baseFreq * (1 + i/40);
+                        carrier.frequency.setValueAtTime(sweepFreq, Tone.now() + i * 0.001);
+                        modulator.frequency.setValueAtTime(sweepFreq * 2, Tone.now() + i * 0.001);
+                    }
+                    
+                    env.triggerAttackRelease(0.02);
+                    
+                    setTimeout(() => {
+                        carrier.stop();
+                        modulator.stop();
+                        carrier.dispose();
+                        modulator.dispose();
+                        env.dispose();
+                    }, 100);
+                }
+            };
+            
+            // Ambient noise
+            ambientNoise = {
+                noise: new Tone.Noise('pink'),
+                filter: new Tone.Filter(50, 'lowpass'),
+                gain: new Tone.Gain(0.0001),
+                isPlaying: false,
+                
+                start() {
+                    if (this.isPlaying) return;
+                    this.noise.connect(this.filter).connect(this.gain).connect(masterGain);
+                    this.filter.Q.value = 0.99;
+                    this.noise.start();
+                    this.isPlaying = true;
+                },
+                
+                stop() {
+                    if (!this.isPlaying) return;
+                    this.noise.stop();
+                    this.isPlaying = false;
+                },
+                
+                updateFilter(mouthWidth) {
+                    // ChucK-style frequency mapping: 100Hz to 5000Hz based on mouth width (10-16)
+                    const freq = Math.max(100.0, 100.0 + ((mouthWidth - 10) / (16 - 10)) * (5000.0 - 100.0));
+                    this.filter.frequency.setValueAtTime(freq, Tone.now());
+                }
+            };
+            
+            // Glass arpeggiator
+            glassArpeggiator = {
+                gain: new Tone.Gain(0.06).connect(masterGain),
+                
+                async playChord(chordIndex) {
+                    if (chordIndex < 0 || chordIndex >= chords.length) return;
+                    
+                    const chord = chords[chordIndex];
+                    const beat = 0.6;
+                    
+                    for (let i = 0; i < chord.length; i++) {
+                        const freq1 = Tone.Frequency(chord[i], 'midi').toFrequency();
+                        const freq2 = Tone.Frequency(chord[i] + 12, 'midi').toFrequency();
+                        
+                        const osc1 = new Tone.Oscillator(freq1, 'sine');
+                        const osc2 = new Tone.Oscillator(freq2, 'triangle');
+                        
+                        const env1 = new Tone.AmplitudeEnvelope({
+                            attack: 0.005,
+                            decay: beat/6,
+                            sustain: 0.3,
+                            release: beat/3
+                        });
+                        
+                        const env2 = new Tone.AmplitudeEnvelope({
+                            attack: 0.005,
+                            decay: beat/6,
+                            sustain: 0.3,
+                            release: beat/3
+                        });
+                        
+                        const echo1 = new Tone.FeedbackDelay(beat/2, 0.6);
+                        const echo2 = new Tone.FeedbackDelay(beat/2, 0.6);
+                        
+                        osc1.connect(env1).connect(echo1).connect(this.gain);
+                        osc2.connect(env2).connect(echo2).connect(this.gain);
+                        
+                        osc1.start();
+                        osc2.start();
+                        env1.triggerAttackRelease(beat/2);
+                        env2.triggerAttackRelease(beat/2);
+                        
+                        setTimeout(() => {
+                            osc1.stop();
+                            osc2.stop();
+                            osc1.dispose();
+                            osc2.dispose();
+                            env1.dispose();
+                            env2.dispose();
+                            echo1.dispose();
+                            echo2.dispose();
+                        }, beat * 1000);
+                        
+                        await new Promise(resolve => setTimeout(resolve, beat * 1000 / 3));
+                    }
+                }
+            };
+        }
+        
+        function setupMediaPipe() {
+            faceMesh = new FaceMesh({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                }
+            });
+            
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            
+            faceMesh.onResults(onResults);
+            camera.start();
+        }
+        
+        function onResults(results) {
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                // Calculate mouth width using MediaPipe landmarks
+                calculateMouthWidth(landmarks);
+                
+                // Draw face mesh (optional - can be removed for cleaner look)
+                drawFaceMesh(landmarks);
+                
+                // Draw hat
+                drawHat(landmarks);
+                
+                // Update audio effects
+                updateAudioEffects();
+                
+                // Update UI
+                updateUI();
+            }
+            
+            ctx.restore();
+        }
+        
+        function calculateMouthWidth(landmarks) {
+            // Mouth corner landmarks: left corner (61), right corner (291)
+            // Upper lip: (13), Lower lip: (14)
+            const leftCorner = landmarks[61];
+            const rightCorner = landmarks[291];
+            const upperLip = landmarks[13];
+            const lowerLip = landmarks[14];
+            
+            // Calculate mouth width (horizontal distance between corners)
+            const mouthWidthPixels = Math.abs(rightCorner.x - leftCorner.x) * canvas.width;
+            
+            // Calculate mouth height (vertical distance between lips)
+            const mouthHeightPixels = Math.abs(upperLip.y - lowerLip.y) * canvas.height;
+            
+            // Normalize to FaceOSC-style values (10-16 range)
+            // This mapping might need adjustment based on your face size
+            const normalizedWidth = (mouthWidthPixels / 100) + 10; // Adjust divisor as needed
+            const normalizedHeight = (mouthHeightPixels / 20) + 10; // Height for mouth openness
+            
+            // Use height for mouth openness (like ChucK code)
+            currentMouthWidth = Math.max(10, Math.min(16, normalizedHeight));
+            
+            // Convert to 0-1 range for effects
+            mouthOpenness = (currentMouthWidth - 10) / 6;
+            
+            // Smooth the values
+            currentMouthWidth = currentMouthWidth * 0.7 + (window.prevMouthWidth || currentMouthWidth) * 0.3;
+            window.prevMouthWidth = currentMouthWidth;
+        }
+        
+        function drawFaceMesh(landmarks) {
+            // Draw face boundary
+            ctx.strokeStyle = '#28a745';
+            const expansion = mouthOpenness * 10;
+            ctx.lineWidth = 2 + expansion;
+            
+            // Get face bounds
+            const xs = landmarks.map(p => p.x * canvas.width);
+            const ys = landmarks.map(p => p.y * canvas.height);
+            const minX = Math.min(...xs) - expansion;
+            const maxX = Math.max(...xs) + expansion;
+            const minY = Math.min(...ys) - expansion;
+            const maxY = Math.max(...ys) + expansion;
+            
+            ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+            
+            // Draw mouth landmarks for debugging
+            ctx.fillStyle = '#ff0000';
+            [61, 291, 13, 14].forEach(i => {
+                const point = landmarks[i];
+                ctx.beginPath();
+                ctx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+        
+        function drawHat(landmarks) {
+            if (currentHat === 'none') return;
+            
+            const hat = hats[currentHat];
+            
+            // Get forehead point (landmark 10) and head top area
+            const forehead = landmarks[10];
+            const leftTemple = landmarks[21];
+            const rightTemple = landmarks[251];
+            
+            const centerX = forehead.x * canvas.width;
+            const centerY = (forehead.y * canvas.height) - 40;
+            const hatWidth = Math.abs(leftTemple.x - rightTemple.x) * canvas.width * 1.2;
+            
+            ctx.save();
+            
+            if (currentHat === 'crown') {
+                // Draw crown
+                ctx.fillStyle = hat.color;
+                ctx.beginPath();
+                ctx.moveTo(centerX - hatWidth/2, centerY);
+                ctx.lineTo(centerX - hatWidth/4, centerY - 30);
+                ctx.lineTo(centerX, centerY - 20);
+                ctx.lineTo(centerX + hatWidth/4, centerY - 30);
+                ctx.lineTo(centerX + hatWidth/2, centerY);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Add gems
+                ctx.fillStyle = '#FF0000';
+                ctx.beginPath();
+                ctx.arc(centerX, centerY - 15, 5, 0, 2 * Math.PI);
+                ctx.fill();
+                
+            } else if (currentHat === 'tophat') {
+                // Draw top hat
+                ctx.fillStyle = hat.color;
+                ctx.fillRect(centerX - hatWidth/2, centerY - 60, hatWidth, 50);
+                ctx.fillRect(centerX - hatWidth/1.5, centerY - 10, hatWidth * 1.3, 10);
+                
+            } else if (currentHat === 'cap') {
+                // Draw baseball cap
+                ctx.fillStyle = hat.color;
+                ctx.beginPath();
+                ctx.ellipse(centerX, centerY - 20, hatWidth/2, 25, 0, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // Cap visor
+                ctx.beginPath();
+                ctx.ellipse(centerX, centerY + 5, hatWidth/2, 15, 0, 0, Math.PI);
+                ctx.fill();
+                
+            } else if (currentHat === 'beret') {
+                // Draw beret
+                ctx.fillStyle = hat.color;
+                ctx.beginPath();
+                ctx.ellipse(centerX, centerY - 15, hatWidth/2, 20, 0, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // Beret stem
+                ctx.fillStyle = '#654321';
+                ctx.beginPath();
+                ctx.arc(centerX + hatWidth/4, centerY - 25, 3, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+            
+            ctx.restore();
+        }
+        
+        function updateAudioEffects() {
+            if (!isAudioStarted) return;
+            
+            // Update sine wave frequency (220Hz to 880Hz)
+            if (oscillator) {
+                const baseFreq = 220;
+                const maxFreq = 880;
+                const frequency = baseFreq + (mouthOpenness * (maxFreq - baseFreq));
+                oscillator.frequency.setValueAtTime(frequency, Tone.now());
+            }
+            
+            // Update reverb
+            if (reverb) {
+                const wetAmount = mouthOpenness * 0.4;
+                reverb.wet.setValueAtTime(wetAmount, Tone.now());
+                
+                const roomSize = 0.1 + (mouthOpenness * 0.3);
+                if (reverb.roomSize) {
+                    reverb.roomSize.value = roomSize;
+                }
+                
+                const decayTime = 0.5 + (mouthOpenness * 1.5);
+                if (reverb.decay) {
+                    reverb.decay = decayTime;
+                }
+            }
+            
+            // Update ambient noise filter
+            if (ambientNoise && isNoiseActive) {
+                ambientNoise.updateFilter(currentMouthWidth);
+            }
+            
+            // Trigger sounds based on mouth width (ChucK style)
+            if (currentMouthWidth > 15 && snowPiano) {
+                if (Math.random() > 0.95) { // Very rare trigger
+                    snowPiano.playCluster();
+                }
+            } else if (currentMouthWidth > 14 && birdSynth) {
+                if (Math.random() > 0.98) { // Even rarer trigger
+                    birdSynth.chirp();
+                }
+            }
+        }
+        
+        function updateUI() {
+            document.getElementById('mouthWidth').textContent = currentMouthWidth.toFixed(1);
+            
+            if (oscillator && isAudioStarted) {
+                const currentFreq = 220 + (mouthOpenness * (880 - 220));
+                document.getElementById('sineFreq').textContent = Math.round(currentFreq) + 'Hz';
+            }
+            
+            // Update mouth indicator bar
+            const indicator = document.getElementById('mouthIndicator');
+            indicator.style.width = (mouthOpenness * 100) + '%';
+        }
+        
+        // Control functions
+        async function startAudio() {
+            if (!isAudioStarted) {
+                await Tone.start();
+                oscillator.start();
+                isAudioStarted = true;
+                document.getElementById('status').textContent = 'Audio started - Open your mouth to control sound!';
+            }
+        }
+        
+        function stopAudio() {
+            if (isAudioStarted && oscillator) {
+                oscillator.stop();
+                oscillator = new Tone.Oscillator(220, 'sine');
+                oscillator.volume.value = -15;
+                oscillator.connect(reverb);
+                
+                if (dripSound) dripSound.stop();
+                if (ambientNoise) ambientNoise.stop();
+                
+                isAudioStarted = false;
+                document.getElementById('status').textContent = 'Audio stopped';
+            }
+        }
+        
+        function toggleMute() {
+            isMuted = !isMuted;
+            if (oscillator) {
+                oscillator.volume.value = isMuted ? -Infinity : -15;
+            }
+        }
+        
+        function selectHat(hatType) {
+            currentHat = hatType;
+        }
+        
+        function playChord(index) {
+            if (glassArpeggiator && isAudioStarted) {
+                glassArpeggiator.playChord(index);
+            }
+        }
+        
+        function playSnowCluster() {
+            if (snowPiano && isAudioStarted) {
+                snowPiano.playCluster();
+            }
+        }
+        
+        function playBirdChirp() {
+            if (birdSynth && isAudioStarted) {
+                birdSynth.chirp();
+            }
+        }
+        
+        function toggleDripping() {
+            isDrippingActive = !isDrippingActive;
+            if (dripSound) {
+                if (isDrippingActive && isAudioStarted) {
+                    dripSound.start();
+                } else {
+                    dripSound.stop();
+                }
+            }
+        }
+        
+        function toggleNoise() {
+            isNoiseActive = !isNoiseActive;
+            if (ambientNoise) {
+                if (isNoiseActive && isAudioStarted) {
+                    ambientNoise.start();
+                } else {
+                    ambientNoise.stop();
+                }
+            }
+        }
+        
+        // Audio file upload functions
+        async function loadAudioFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            document.getElementById('uploadedFileName').textContent = file.name;
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                uploadedBuffer = await Tone.Buffer.fromArray(arrayBuffer);
+                
+                if (uploadedPlayer) {
+                    uploadedPlayer.dispose();
+                }
+                uploadedPlayer = new Tone.Player(uploadedBuffer).connect(masterGain);
+                uploadedPlayer.loop = isUploadedLooping;
+                
+                document.getElementById('status').textContent = 'Audio file loaded: ' + file.name;
+            } catch (error) {
+                console.error('Error loading audio file:', error);
+                document.getElementById('status').textContent = 'Error loading audio file';
+            }
+        }
+        
+        function playUploadedSound() {
+            if (uploadedPlayer && isAudioStarted && !isUploadedPlaying) {
+                uploadedPlayer.start();
+                isUploadedPlaying = true;
+                
+                if (!isUploadedLooping) {
+                    setTimeout(() => {
+                        isUploadedPlaying = false;
+                    }, uploadedBuffer.duration * 1000);
+                }
+            }
+        }
+        
+        function stopUploadedSound() {
+            if (uploadedPlayer && isUploadedPlaying) {
+                uploadedPlayer.stop();
+                isUploadedPlaying = false;
+            }
+        }
+        
+        function toggleLoopUploadedSound() {
+            isUploadedLooping = !isUploadedLooping;
+            if (uploadedPlayer) {
+                uploadedPlayer.loop = isUploadedLooping;
+            }
+            document.getElementById('loopStatus').textContent = isUploadedLooping ? 'ON' : 'OFF';
+        }
+        
+        // Keyboard controls (matching ChucK)
+        document.addEventListener('keydown', function(event) {
+            if (!isAudioStarted) return;
+            
+            const key = event.key.toLowerCase();
+            switch(key) {
+                case 'c': playChord(0); break;
+                case 'g': playChord(1); break;
+                case 'f': playChord(2); break;
+                case 'e': playChord(3); break;
+                case 'd': playChord(4); break;
+            }
+        });
+        
+        // Initialize when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
