@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Pixel Face & Hand Synth</title>
+    <title>Pixel Face & Hand Synth (1000x350)</title>
     <!-- Google Fonts for Pixel Style -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +20,7 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            background-color: #a7d8f9; /* Light blue outer background */
+            background-color: #a7d8f9;
             font-family: 'Press Start 2P', cursive;
             margin: 0;
             overflow: hidden;
@@ -28,33 +28,37 @@
 
         #app-container {
             width: 1000px;
-            height: 600px;
-            background-color: #f9c5d1; /* Pink inner background */
+            height: 350px;
+            background-color: #f9c5d1;
             border-radius: 15px;
             box-shadow: 0 10px 0 #e8a5b4;
-            padding: 20px;
+            padding: 15px;
             box-sizing: border-box;
             position: relative;
         }
         
         #main-content {
             display: grid;
-            grid-template-columns: 200px 1fr 200px;
-            gap: 20px;
+            grid-template-columns: 180px 1fr 180px;
+            gap: 15px;
             width: 100%;
             height: 100%;
         }
 
         .panel {
-            background-color: rgba(255, 255, 255, 0.3);
+            background-color: rgba(255, 255, 255, 0.4);
             border-radius: 10px;
-            padding: 20px;
+            padding: 15px;
             box-sizing: border-box;
             color: #4a4a4a;
+            overflow-y: auto;
         }
+        .panel::-webkit-scrollbar { width: 8px; }
+        .panel::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.3); border-radius: 4px; }
+
         .panel h3 {
-            margin: 0 0 20px 0;
-            font-size: 14px;
+            margin: 0 0 15px 0;
+            font-size: 12px;
             text-align: center;
             color: #d63031;
         }
@@ -62,17 +66,15 @@
         #hat-panel .hat-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 15px;
+            gap: 10px;
         }
         #hat-panel img {
             width: 100%;
             cursor: pointer;
             transition: transform 0.1s;
-            image-rendering: pixelated; /* Keeps pixel art sharp */
+            image-rendering: pixelated;
         }
-        #hat-panel img:hover {
-            transform: scale(1.1);
-        }
+        #hat-panel img:hover { transform: scale(1.1); }
 
         #video-container {
             position: relative;
@@ -99,25 +101,17 @@
             z-index: 100;
         }
 
-        #filter-panel ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
+        #filter-panel ul { list-style: none; padding: 0; margin: 0; }
         #filter-panel li {
-            margin-bottom: 15px;
+            margin-bottom: 12px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
             transition: color 0.2s;
         }
-        #filter-panel li:before {
-            content: '- ';
-        }
-        #filter-panel li:hover, #filter-panel li.active {
-            color: #0984e3;
-        }
+        #filter-panel li:before { content: '- '; }
+        #filter-panel li:hover, #filter-panel li.active { color: #0984e3; }
         
-        #audio-start-overlay {
+        #start-overlay {
             position: absolute;
             top: 0;
             left: 0;
@@ -133,7 +127,7 @@
             border-radius: 15px;
             transition: opacity 0.3s;
         }
-        #audio-start-overlay p {
+        #start-overlay p {
             font-size: 20px;
             text-shadow: 3px 3px #000;
             padding: 20px;
@@ -144,7 +138,7 @@
 <body>
 
     <div id="app-container">
-        <div id="audio-start-overlay">
+        <div id="start-overlay">
             <p>Click to Start</p>
         </div>
 
@@ -166,49 +160,53 @@
     </div>
 
 <script>
-    const audioOverlay = document.getElementById('audio-start-overlay');
+    // --- DOM Elements ---
+    const startOverlay = document.getElementById('start-overlay');
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output-canvas');
     const canvasCtx = canvasElement.getContext('2d');
     const hatImage = document.getElementById('hat-image');
     const hatGridContainer = document.getElementById('hat-grid-container');
     const filterList = document.getElementById('filter-list');
+
+    // --- MediaPipe and Audio Instances ---
     let faceMesh, hands, camera, drawingUtils;
-    let isAudioReady = false;
+    let ambientSynth, keyboardSynth, reverb, filterLFO;
+    
+    // --- State & Config ---
+    let isAppInitialized = false;
     let mouthOpenness = 0;
     let activeNote = null;
     const NUM_NOTE_ZONES = 7;
     const scale = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
     const hats = [
-        { name: 'Santa', file: 'hats/santa_hat.png' },
-        { name: 'Wizard', file: 'hats/wizard_hat.png' },
-        { name: 'Tophat', file: 'hats/top_hat.png' },
-        { name: 'Beanie', file: 'hats/beanie.png' },
+        { name: 'Santa', file: 'hats/santa_hat.png' }, { name: 'Wizard', file: 'hats/wizard_hat.png' },
+        { name: 'Tophat', file: 'hats/top_hat.png' }, { name: 'Beanie', file: 'hats/beanie.png' },
     ];
-    let ambientSynth, keyboardSynth, reverb, filterLFO;
     const soundFilters = {
         'Waves':  { noise: 'brown', filterType: 'lowpass', baseFreq: 150, lfoFreq: 0.3, lfoDepth: 100 },
         'Windy':  { noise: 'pink', filterType: 'bandpass', baseFreq: 1500, lfoFreq: 5, lfoDepth: 800 },
         'Mist':   { noise: 'white', filterType: 'highpass', baseFreq: 4000, lfoFreq: 0.1, lfoDepth: 500 },
         'Drizzle':{ noise: 'white', filterType: 'lowpass', baseFreq: 5000, lfoFreq: 15, lfoDepth: 2000 },
-        'Tide':   { noise: 'brown', filterType: 'lowpass', baseFreq: 80, lfoFreq: 0.1, lfoDepth: 50 },
-        'Breeze': { noise: 'pink', filterType: 'highpass', baseFreq: 2000, lfoFreq: 1, lfoDepth: 1000 },
     };
 
-    window.addEventListener('load', () => {
-        setupUI();
-    });
+    // --- Main Initialization Trigger ---
+    startOverlay.addEventListener('click', async () => {
+        if (isAppInitialized) return;
+        
+        startOverlay.style.opacity = '0';
+        setTimeout(() => startOverlay.style.display = 'none', 300);
 
-    async function initializeApp() {
         await setupAudio();
         setupMediaPipe();
         startVideo();
-    }
-    
+        
+        isAppInitialized = true;
+    });
+
+    // --- Setup Functions ---
     async function setupAudio() {
-        if (isAudioReady) return;
         await Tone.start();
-        console.log("Audio context started.");
         reverb = new Tone.Reverb({ decay: 4, wet: 0.4 }).toDestination();
         const filter = new Tone.Filter(200, 'lowpass').connect(reverb);
         filterLFO = new Tone.LFO(0.2, 100, 500).connect(filter.frequency).start();
@@ -220,7 +218,6 @@
             volume: -6
         }).connect(reverb);
         applySoundFilter('Waves');
-        isAudioReady = true;
     }
 
     function setupUI() {
@@ -265,35 +262,34 @@
         camera.start();
     }
     
-    audioOverlay.addEventListener('click', async () => {
-        await initializeApp();
-        audioOverlay.style.opacity = '0';
-        setTimeout(() => audioOverlay.style.display = 'none', 300);
-    });
-
+    // --- MediaPipe Results Handler ---
     function onResults(results) {
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-            const landmarks = results.multiFaceLandmarks[0];
-            drawingUtils.drawConnectors(landmarks, FaceMesh.FACEMESH_TESSELATION, {color: '#FFFFFF', lineWidth: 1});
-            processFace(landmarks);
+
+        // *** THIS IS THE CRITICAL FIX ***
+        // Draw the video frame first
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        // Then draw the landmarks on top
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
+            drawingUtils.drawConnectors(results.multiFaceLandmarks[0], FaceMesh.FACEMESH_TESSELATION, {color: '#FFFFFF', lineWidth: 1});
+            processFace(results.multiFaceLandmarks[0]);
         }
-        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-            const landmarks = results.multiHandLandmarks[0];
-            drawingUtils.drawConnectors(landmarks, Hands.HAND_CONNECTIONS, {color: '#FFFFFF', lineWidth: 2});
-            drawingUtils.drawLandmarks(landmarks, {color: '#FFFFFF', lineWidth: 2, radius: 3});
-            if(isAudioReady) processHand(landmarks);
-        } else {
-            if (isAudioReady && activeNote) {
-                keyboardSynth.triggerRelease(activeNote);
-                activeNote = null;
-            }
+        if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
+            drawingUtils.drawConnectors(results.multiHandLandmarks[0], Hands.HAND_CONNECTIONS, {color: '#FFFFFF', lineWidth: 2});
+            drawingUtils.drawLandmarks(results.multiHandLandmarks[0], {color: '#FFFFFF', radius: 3});
+            if(isAppInitialized) processHand(results.multiHandLandmarks[0]);
+        } else if (activeNote) {
+            keyboardSynth.triggerRelease(activeNote);
+            activeNote = null;
         }
-        if (isAudioReady) updateAudio();
+
+        if (isAppInitialized) updateAudio();
         canvasCtx.restore();
     }
 
+    // --- Processing & Control Functions ---
     function processFace(landmarks) {
         positionHat(landmarks);
         const upperLip = landmarks[13], lowerLip = landmarks[14], leftCheek = landmarks[234], rightCheek = landmarks[454];
@@ -306,7 +302,7 @@
         if (!hatImage.src || hatImage.style.display === 'none') return;
         const forehead = landmarks[10], leftTemple = landmarks[227], rightTemple = landmarks[447];
         if (forehead && leftTemple && rightTemple) {
-            const videoRect = document.getElementById('video-container').getBoundingClientRect();
+            const videoRect = videoElement.getBoundingClientRect();
             const headWidth = Math.hypot(leftTemple.x - rightTemple.x, leftTemple.y - rightTemple.y);
             const angle = Math.atan2((rightTemple.y - leftTemple.y) * videoRect.height, (rightTemple.x - leftTemple.x) * videoRect.width);
             hatImage.style.width = `${headWidth * 1.5 * videoRect.width}px`;
@@ -342,7 +338,7 @@
     
     window.applySoundFilter = (name) => {
         const settings = soundFilters[name];
-        if (!settings || !isAudioReady) return;
+        if (!settings || !isAppInitialized) return;
         ambientSynth.noise.type = settings.noise;
         ambientSynth.filter.type = settings.filterType;
         ambientSynth.filter.frequency.value = settings.baseFreq;
@@ -351,6 +347,9 @@
         filterLFO.max = settings.baseFreq + settings.lfoDepth / 2;
         document.querySelectorAll('#filter-list li').forEach(li => li.classList.toggle('active', li.textContent === name));
     };
+
+    // --- Run on page load ---
+    setupUI();
 </script>
 </body>
 </html>
