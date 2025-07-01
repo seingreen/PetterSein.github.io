@@ -117,7 +117,6 @@
             color: #0984e3;
         }
         
-        /* NEW: Overlay for starting audio */
         #audio-start-overlay {
             position: absolute;
             top: 0;
@@ -131,7 +130,7 @@
             align-items: center;
             z-index: 999;
             cursor: pointer;
-            border-radius: 15px; /* Match parent */
+            border-radius: 15px;
             transition: opacity 0.3s;
         }
         #audio-start-overlay p {
@@ -145,26 +144,20 @@
 <body>
 
     <div id="app-container">
-        <!-- NEW: Audio Start Overlay -->
         <div id="audio-start-overlay">
-            <p>Click to Start Audio</p>
+            <p>Click to Start</p>
         </div>
 
         <div id="main-content">
-            <!-- Left Panel: Hat Selection -->
             <div id="hat-panel" class="panel">
                 <h3>Pick a hat!</h3>
                 <div class="hat-grid" id="hat-grid-container"></div>
             </div>
-
-            <!-- Center: Video Feed -->
             <div id="video-container">
                 <video id="webcam" playsinline style="display: none;"></video>
                 <canvas id="output-canvas"></canvas>
                 <img id="hat-image" src="" style="display: none;" alt="User Hat"/>
             </div>
-
-            <!-- Right Panel: Sound Filters -->
             <div id="filter-panel" class="panel">
                 <h3>Filters to try!</h3>
                 <ul id="filter-list"></ul>
@@ -173,8 +166,6 @@
     </div>
 
 <script>
-    // --- DOM Elements ---
-    const appContainer = document.getElementById('app-container');
     const audioOverlay = document.getElementById('audio-start-overlay');
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output-canvas');
@@ -182,25 +173,18 @@
     const hatImage = document.getElementById('hat-image');
     const hatGridContainer = document.getElementById('hat-grid-container');
     const filterList = document.getElementById('filter-list');
-
-    // --- MediaPipe Instances ---
     let faceMesh, hands, camera, drawingUtils;
-    
-    // --- State & Config ---
     let isAudioReady = false;
     let mouthOpenness = 0;
     let activeNote = null;
-    const NUM_NOTE_ZONES = 7; // C, D, E, F, G, A, B
+    const NUM_NOTE_ZONES = 7;
     const scale = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
-
     const hats = [
         { name: 'Santa', file: 'hats/santa_hat.png' },
         { name: 'Wizard', file: 'hats/wizard_hat.png' },
         { name: 'Tophat', file: 'hats/top_hat.png' },
         { name: 'Beanie', file: 'hats/beanie.png' },
     ];
-    
-    // --- Audio (Tone.js) ---
     let ambientSynth, keyboardSynth, reverb, filterLFO;
     const soundFilters = {
         'Waves':  { noise: 'brown', filterType: 'lowpass', baseFreq: 150, lfoFreq: 0.3, lfoDepth: 100 },
@@ -211,30 +195,30 @@
         'Breeze': { noise: 'pink', filterType: 'highpass', baseFreq: 2000, lfoFreq: 1, lfoDepth: 1000 },
     };
 
-    // --- Main Initialization on Page Load ---
     window.addEventListener('load', () => {
         setupUI();
-        setupMediaPipe();
-        startVideo();
     });
 
+    async function initializeApp() {
+        await setupAudio();
+        setupMediaPipe();
+        startVideo();
+    }
+    
     async function setupAudio() {
         if (isAudioReady) return;
         await Tone.start();
         console.log("Audio context started.");
-
         reverb = new Tone.Reverb({ decay: 4, wet: 0.4 }).toDestination();
         const filter = new Tone.Filter(200, 'lowpass').connect(reverb);
         filterLFO = new Tone.LFO(0.2, 100, 500).connect(filter.frequency).start();
         ambientSynth = new Tone.Noise('brown').connect(filter).start();
         ambientSynth.volume.value = -25;
-        
         keyboardSynth = new Tone.Synth({
             oscillator: { type: 'triangle8' },
             envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 },
             volume: -6
         }).connect(reverb);
-        
         applySoundFilter('Waves');
         isAudioReady = true;
     }
@@ -281,16 +265,12 @@
         camera.start();
     }
     
-    // --- Event Listener for Audio Start ---
     audioOverlay.addEventListener('click', async () => {
-        await setupAudio();
+        await initializeApp();
         audioOverlay.style.opacity = '0';
-        setTimeout(() => {
-            audioOverlay.style.display = 'none';
-        }, 300); // Hide after fade out
+        setTimeout(() => audioOverlay.style.display = 'none', 300);
     });
 
-    // --- Combined Results Handler ---
     function onResults(results) {
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -310,19 +290,13 @@
                 activeNote = null;
             }
         }
-        if (isAudioReady) {
-            updateAudio();
-        }
+        if (isAudioReady) updateAudio();
         canvasCtx.restore();
     }
 
-    // --- Processing Functions ---
     function processFace(landmarks) {
         positionHat(landmarks);
-        const upperLip = landmarks[13];
-        const lowerLip = landmarks[14];
-        const leftCheek = landmarks[234];
-        const rightCheek = landmarks[454];
+        const upperLip = landmarks[13], lowerLip = landmarks[14], leftCheek = landmarks[234], rightCheek = landmarks[454];
         const mouthDist = Math.hypot(upperLip.x - lowerLip.x, upperLip.y - lowerLip.y);
         const faceWidth = Math.hypot(leftCheek.x - rightCheek.x, leftCheek.y - rightCheek.y);
         mouthOpenness = Math.min(1.0, Math.max(0.0, (mouthDist / faceWidth - 0.05) * 5));
@@ -330,14 +304,12 @@
 
     function positionHat(landmarks) {
         if (!hatImage.src || hatImage.style.display === 'none') return;
-        const forehead = landmarks[10];
-        const leftTemple = landmarks[227];
-        const rightTemple = landmarks[447];
+        const forehead = landmarks[10], leftTemple = landmarks[227], rightTemple = landmarks[447];
         if (forehead && leftTemple && rightTemple) {
-            const videoContainerRect = document.getElementById('video-container').getBoundingClientRect();
+            const videoRect = document.getElementById('video-container').getBoundingClientRect();
             const headWidth = Math.hypot(leftTemple.x - rightTemple.x, leftTemple.y - rightTemple.y);
-            const angle = Math.atan2((rightTemple.y - leftTemple.y) * videoContainerRect.height, (rightTemple.x - leftTemple.x) * videoContainerRect.width);
-            hatImage.style.width = `${headWidth * 1.5 * videoContainerRect.width}px`;
+            const angle = Math.atan2((rightTemple.y - leftTemple.y) * videoRect.height, (rightTemple.x - leftTemple.x) * videoRect.width);
+            hatImage.style.width = `${headWidth * 1.5 * videoRect.width}px`;
             hatImage.style.left = `${forehead.x * 100}%`;
             hatImage.style.top = `${forehead.y * 100}%`;
             hatImage.style.transform = `translate(-50%, -100%) rotate(${angle}rad)`;
@@ -345,14 +317,11 @@
     }
 
     function processHand(landmarks) {
-        const indexTip = landmarks[8];
-        const zoneWidth = 1.0 / NUM_NOTE_ZONES;
+        const indexTip = landmarks[8], zoneWidth = 1.0 / NUM_NOTE_ZONES;
         const noteIndex = Math.floor(indexTip.x / zoneWidth);
         const noteToPlay = scale[noteIndex];
         if (noteToPlay && noteToPlay !== activeNote) {
-            if (activeNote) {
-                keyboardSynth.triggerRelease(activeNote);
-            }
+            if (activeNote) keyboardSynth.triggerRelease(activeNote);
             keyboardSynth.triggerAttack(noteToPlay);
             activeNote = noteToPlay;
         } else if (!noteToPlay && activeNote) {
@@ -361,19 +330,14 @@
         }
     }
     
-    // --- Update and Control Functions ---
     function updateAudio() {
         const volume = -35 + (mouthOpenness * 20);
         ambientSynth.volume.rampTo(volume, 0.1);
     }
     
     window.selectHat = (hatFile) => {
-        if (!hatFile) {
-            hatImage.style.display = 'none';
-        } else {
-            hatImage.src = hatFile;
-            hatImage.style.display = 'block';
-        }
+        hatImage.src = hatFile ? hatFile : '';
+        hatImage.style.display = hatFile ? 'block' : 'none';
     };
     
     window.applySoundFilter = (name) => {
@@ -385,9 +349,7 @@
         filterLFO.frequency.value = settings.lfoFreq;
         filterLFO.min = settings.baseFreq - settings.lfoDepth / 2;
         filterLFO.max = settings.baseFreq + settings.lfoDepth / 2;
-        document.querySelectorAll('#filter-list li').forEach(li => {
-            li.classList.toggle('active', li.textContent === name);
-        });
+        document.querySelectorAll('#filter-list li').forEach(li => li.classList.toggle('active', li.textContent === name));
     };
 </script>
 </body>
