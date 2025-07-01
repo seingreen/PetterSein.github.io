@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>Pixel Face & Hand Synth (1000x350)</title>
-    <!-- Google Fonts for Pixel Style -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     
     <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
-    <!-- 수정됨: 필수 라이브러리 복원 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -26,7 +24,6 @@
             margin: 0;
             overflow: hidden;
         }
-
         #app-container {
             width: 1000px;
             height: 350px;
@@ -37,7 +34,6 @@
             box-sizing: border-box;
             position: relative;
         }
-        
         #main-content {
             display: grid;
             grid-template-columns: 180px 1fr 180px;
@@ -45,7 +41,6 @@
             width: 100%;
             height: 100%;
         }
-
         .panel {
             background-color: rgba(255, 255, 255, 0.4);
             border-radius: 10px;
@@ -56,14 +51,12 @@
         }
         .panel::-webkit-scrollbar { width: 8px; }
         .panel::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.3); border-radius: 4px; }
-
         .panel h3 {
             margin: 0 0 15px 0;
             font-size: 12px;
             text-align: center;
             color: #d63031;
         }
-
         #hat-panel .hat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         #hat-panel img {
             width: 100%;
@@ -72,7 +65,6 @@
             image-rendering: pixelated;
         }
         #hat-panel img:hover { transform: scale(1.1); }
-
         #video-container {
             position: relative;
             background-color: #333;
@@ -88,10 +80,6 @@
             transform: scaleX(-1);
             object-fit: cover;
         }
-        /* 수정됨: 비디오를 숨기지 않습니다. */
-        #webcam {
-             /* display: none; 제거 */
-        }
         #hat-image {
             position: absolute;
             width: 150px;
@@ -100,7 +88,6 @@
             image-rendering: pixelated;
             z-index: 100;
         }
-
         #filter-panel ul { list-style: none; padding: 0; margin: 0; }
         #filter-panel li {
             margin-bottom: 12px;
@@ -110,7 +97,6 @@
         }
         #filter-panel li:before { content: '- '; }
         #filter-panel li:hover, #filter-panel li.active { color: #0984e3; }
-        
         #start-overlay {
             position: absolute;
             top: 0;
@@ -136,19 +122,15 @@
     </style>
 </head>
 <body>
-
     <div id="app-container">
-        <div id="start-overlay">
-            <p>Click to Start</p>
-        </div>
-
+        <div id="start-overlay"><p>Click to Start</p></div>
         <div id="main-content">
             <div id="hat-panel" class="panel">
                 <h3>Pick a hat!</h3>
                 <div class="hat-grid" id="hat-grid-container"></div>
             </div>
             <div id="video-container">
-                <video id="webcam" style="display:none"></video> <!-- 처음엔 숨겨둠 -->
+                <video id="webcam"></video>
                 <canvas id="output-canvas"></canvas>
                 <img id="hat-image" src="" style="display: none;" alt="User Hat"/>
             </div>
@@ -158,8 +140,8 @@
             </div>
         </div>
     </div>
-
 <script>
+    // --- DOM Elements ---
     const startOverlay = document.getElementById('start-overlay');
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output-canvas');
@@ -167,33 +149,31 @@
     const hatImage = document.getElementById('hat-image');
     const hatGridContainer = document.getElementById('hat-grid-container');
     const filterList = document.getElementById('filter-list');
-
-    let faceMesh, hands, drawingUtils, camera;
-    let ambientSynth, keyboardSynth, reverb, filterLFO;
     
+    // --- MediaPipe & State ---
+    let faceMesh, hands, drawingUtils, camera;
     let isAppInitialized = false;
-    let mouthOpenness = 0;
-    let activeNote = null;
-    const scale = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
-    const hats = [
-        { name: 'Santa', file: 'hats/santa_hat.png' }, { name: 'Wizard', file: 'hats/wizard_hat.png' },
-        { name: 'Tophat', file: 'hats/top_hat.png' }, { name: 'Beanie', file: 'hats/beanie.png' },
-    ];
-    const soundFilters = {
-        'Waves':  { noise: 'brown', filterType: 'lowpass', baseFreq: 150, lfoFreq: 0.3, lfoDepth: 100 },
-        'Windy':  { noise: 'pink', filterType: 'bandpass', baseFreq: 1500, lfoFreq: 5, lfoDepth: 800 },
-    };
+    let mouthOpenness = 0, activeNote = null;
+    
+    // 수정 1: 얼굴과 손의 결과 데이터를 별도로 저장할 변수
+    let latestFaceResults = null;
+    let latestHandResults = null;
 
+    // --- Audio & Config ---
+    let ambientSynth, keyboardSynth, reverb, filterLFO;
+    const scale = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
+    const hats = [{ name: 'Santa', file: 'hats/santa_hat.png' }, { name: 'Wizard', file: 'hats/wizard_hat.png' }, { name: 'Tophat', file: 'hats/top_hat.png' }, { name: 'Beanie', file: 'hats/beanie.png' }];
+    const soundFilters = { 'Waves':  { noise: 'brown', filterType: 'lowpass', baseFreq: 150, lfoFreq: 0.3, lfoDepth: 100 }, 'Windy':  { noise: 'pink', filterType: 'bandpass', baseFreq: 1500, lfoFreq: 5, lfoDepth: 800 } };
+    
+    // --- Initialization ---
     startOverlay.addEventListener('click', async () => {
         if (isAppInitialized) return;
         isAppInitialized = true;
-
         startOverlay.style.opacity = '0';
         setTimeout(() => startOverlay.style.display = 'none', 300);
-
         await setupAudio();
         setupMediaPipe();
-        startCamera(); // 수정됨: 카메라 시작 로직 변경
+        startCamera();
     });
 
     async function setupAudio() {
@@ -203,11 +183,7 @@
         filterLFO = new Tone.LFO(0.2, 100, 500).connect(filter.frequency).start();
         ambientSynth = new Tone.Noise('brown').connect(filter).start();
         ambientSynth.volume.value = -25;
-        keyboardSynth = new Tone.Synth({
-            oscillator: { type: 'triangle8' },
-            envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 },
-            volume: -6
-        }).connect(reverb);
+        keyboardSynth = new Tone.Synth({ oscillator: { type: 'triangle8' }, envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 }, volume: -6 }).connect(reverb);
         applySoundFilter('Waves');
     }
 
@@ -227,65 +203,80 @@
         });
         if(filterList.querySelector('li')) filterList.querySelector('li').classList.add('active');
     }
+    setupUI();
 
     function setupMediaPipe() {
         drawingUtils = new DrawingUtils(canvasCtx);
         faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
         faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-        faceMesh.onResults(onResults);
+        // 수정 3: 얼굴과 손의 콜백은 데이터 저장만 담당
+        faceMesh.onResults(results => { latestFaceResults = results; });
+        
         hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-        hands.onResults(onResults);
+        hands.onResults(results => { latestHandResults = results; });
     }
-    
-    // 수정됨: Camera 유틸리티를 사용한 안정적인 카메라 시작 방식으로 복원
+
     function startCamera() {
         camera = new Camera(videoElement, {
             onFrame: async () => {
-                // 캔버스 크기를 비디오 컨테이너에 맞게 조절
-                if (canvasElement.width !== videoElement.videoWidth) {
-                   canvasElement.width = videoElement.videoWidth;
-                   canvasElement.height = videoElement.videoHeight;
-                }
-                // 비디오가 준비되면 MediaPipe 처리 시작
-                await faceMesh.send({image: videoElement});
-                await hands.send({image: videoElement});
+                await faceMesh.send({ image: videoElement });
+                await hands.send({ image: videoElement });
             },
-            width: 640,
-            height: 480
+            width: 640, height: 480
         });
-        camera.start().catch(err => {
+        camera.start().then(() => {
+            // 카메라가 성공적으로 시작되면 렌더링 루프 시작
+            renderLoop();
+        }).catch(err => {
             console.error("Camera access denied:", err);
             startOverlay.innerHTML = "<p>Camera Access Denied!</p>";
             startOverlay.style.display = "flex";
             startOverlay.style.opacity = "1";
         });
-        videoElement.style.display = 'block'; // 카메라가 시작되면 비디오를 보여줌
     }
 
-    function onResults(results) {
+    // 수정 2: 렌더링 루프를 분리하여 그리기 충돌 방지
+    function renderLoop() {
+        if (!isAppInitialized) return;
+        
+        // 캔버스 크기를 비디오 크기에 맞춤
+        if (canvasElement.width !== videoElement.videoWidth) {
+           canvasElement.width = videoElement.videoWidth;
+           canvasElement.height = videoElement.videoHeight;
+        }
+
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        
-        // 수정됨: 비디오를 캔버스에 그리지 않습니다. 비디오는 배경에서 직접 보여집니다.
-        // canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
 
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
-            drawingUtils.drawConnectors(results.multiFaceLandmarks[0], FaceMesh.FACEMESH_TESSELATION, {color: '#FFFFFF', lineWidth: 1});
-            processFace(results.multiFaceLandmarks[0]);
+        // 얼굴 결과 처리 및 그리기
+        if (latestFaceResults && latestFaceResults.multiFaceLandmarks[0]) {
+            const landmarks = latestFaceResults.multiFaceLandmarks[0];
+            drawingUtils.drawConnectors(landmarks, FaceMesh.FACEMESH_TESSELATION, {color: '#FFFFFF', lineWidth: 1});
+            processFace(landmarks);
         }
-        if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
-            drawingUtils.drawConnectors(results.multiHandLandmarks[0], Hands.HAND_CONNECTIONS, {color: '#FFFFFF', lineWidth: 2});
-            drawingUtils.drawLandmarks(results.multiHandLandmarks[0], {color: '#FFFFFF', radius: 3});
-            processHand(results.multiHandLandmarks[0]);
-        } else if (activeNote) {
-            keyboardSynth.triggerRelease(activeNote);
-            activeNote = null;
+
+        // 손 결과 처리 및 그리기
+        if (latestHandResults && latestHandResults.multiHandLandmarks[0]) {
+            const landmarks = latestHandResults.multiHandLandmarks[0];
+            drawingUtils.drawConnectors(landmarks, Hands.HAND_CONNECTIONS, {color: '#FFFFFF', lineWidth: 2});
+            drawingUtils.drawLandmarks(landmarks, {color: '#FFFFFF', radius: 3});
+            processHand(landmarks);
+        } else {
+             // 손이 감지되지 않으면 연주 중인 노트 중지
+            if (activeNote) {
+                keyboardSynth.triggerRelease(activeNote);
+                activeNote = null;
+            }
         }
         updateAudio();
         canvasCtx.restore();
-    }
 
+        // 다음 프레임에 루프 계속
+        requestAnimationFrame(renderLoop);
+    }
+    
+    // --- Processing & Control Functions ---
     function processFace(landmarks) {
         positionHat(landmarks);
         const upperLip = landmarks[13], lowerLip = landmarks[14], leftCheek = landmarks[234], rightCheek = landmarks[454];
@@ -323,7 +314,6 @@
     }
     
     function updateAudio() {
-        if (!isAppInitialized) return;
         const volume = -35 + (mouthOpenness * 20);
         ambientSynth.volume.rampTo(volume, 0.1);
     }
@@ -344,8 +334,6 @@
         filterLFO.max = settings.baseFreq + settings.lfoDepth / 2;
         document.querySelectorAll('#filter-list li').forEach(li => li.classList.toggle('active', li.textContent === name));
     };
-
-    setupUI();
 </script>
 </body>
 </html>
