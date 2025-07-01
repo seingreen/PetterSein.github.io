@@ -71,6 +71,7 @@
             border-radius: 10px;
             overflow: hidden;
         }
+        /* 수정됨: 비디오와 캔버스를 겹치도록 설정 */
         #webcam, #output-canvas {
             position: absolute;
             top: 0;
@@ -141,7 +142,6 @@
         </div>
     </div>
 <script>
-    // --- DOM Elements ---
     const startOverlay = document.getElementById('start-overlay');
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output-canvas');
@@ -150,22 +150,15 @@
     const hatGridContainer = document.getElementById('hat-grid-container');
     const filterList = document.getElementById('filter-list');
     
-    // --- MediaPipe & State ---
     let faceMesh, hands, drawingUtils, camera;
     let isAppInitialized = false;
     let mouthOpenness = 0, activeNote = null;
-    
-    // 수정 1: 얼굴과 손의 결과 데이터를 별도로 저장할 변수
-    let latestFaceResults = null;
-    let latestHandResults = null;
 
-    // --- Audio & Config ---
     let ambientSynth, keyboardSynth, reverb, filterLFO;
     const scale = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
     const hats = [{ name: 'Santa', file: 'hats/santa_hat.png' }, { name: 'Wizard', file: 'hats/wizard_hat.png' }, { name: 'Tophat', file: 'hats/top_hat.png' }, { name: 'Beanie', file: 'hats/beanie.png' }];
     const soundFilters = { 'Waves':  { noise: 'brown', filterType: 'lowpass', baseFreq: 150, lfoFreq: 0.3, lfoDepth: 100 }, 'Windy':  { noise: 'pink', filterType: 'bandpass', baseFreq: 1500, lfoFreq: 5, lfoDepth: 800 } };
     
-    // --- Initialization ---
     startOverlay.addEventListener('click', async () => {
         if (isAppInitialized) return;
         isAppInitialized = true;
@@ -209,26 +202,27 @@
         drawingUtils = new DrawingUtils(canvasCtx);
         faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
         faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-        // 수정 3: 얼굴과 손의 콜백은 데이터 저장만 담당
-        faceMesh.onResults(results => { latestFaceResults = results; });
+        faceMesh.onResults(onResults);
         
         hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
         hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-        hands.onResults(results => { latestHandResults = results; });
+        hands.onResults(onResults);
     }
 
     function startCamera() {
         camera = new Camera(videoElement, {
             onFrame: async () => {
+                // 캔버스 크기를 비디오 크기에 맞춤
+                if (canvasElement.width !== videoElement.videoWidth) {
+                   canvasElement.width = videoElement.videoWidth;
+                   canvasElement.height = videoElement.videoHeight;
+                }
                 await faceMesh.send({ image: videoElement });
                 await hands.send({ image: videoElement });
             },
             width: 640, height: 480
         });
-        camera.start().then(() => {
-            // 카메라가 성공적으로 시작되면 렌더링 루프 시작
-            renderLoop();
-        }).catch(err => {
+        camera.start().catch(err => {
             console.error("Camera access denied:", err);
             startOverlay.innerHTML = "<p>Camera Access Denied!</p>";
             startOverlay.style.display = "flex";
@@ -236,34 +230,28 @@
         });
     }
 
-    // 수정 2: 렌더링 루프를 분리하여 그리기 충돌 방지
-    function renderLoop() {
-        if (!isAppInitialized) return;
-        
-        // 캔버스 크기를 비디오 크기에 맞춤
-        if (canvasElement.width !== videoElement.videoWidth) {
-           canvasElement.width = videoElement.videoWidth;
-           canvasElement.height = videoElement.videoHeight;
-        }
-
+    function onResults(results) {
+        // 비디오 위에 그림을 그리기 전에 캔버스를 깨끗하게 지웁니다.
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
+        // 수정됨: 더 이상 캔버스에 비디오를 그리지 않습니다.
+        // canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
         // 얼굴 결과 처리 및 그리기
-        if (latestFaceResults && latestFaceResults.multiFaceLandmarks[0]) {
-            const landmarks = latestFaceResults.multiFaceLandmarks[0];
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
+            const landmarks = results.multiFaceLandmarks[0];
             drawingUtils.drawConnectors(landmarks, FaceMesh.FACEMESH_TESSELATION, {color: '#FFFFFF', lineWidth: 1});
             processFace(landmarks);
         }
 
         // 손 결과 처리 및 그리기
-        if (latestHandResults && latestHandResults.multiHandLandmarks[0]) {
-            const landmarks = latestHandResults.multiHandLandmarks[0];
+        if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
+            const landmarks = results.multiHandLandmarks[0];
             drawingUtils.drawConnectors(landmarks, Hands.HAND_CONNECTIONS, {color: '#FFFFFF', lineWidth: 2});
             drawingUtils.drawLandmarks(landmarks, {color: '#FFFFFF', radius: 3});
             processHand(landmarks);
         } else {
-             // 손이 감지되지 않으면 연주 중인 노트 중지
             if (activeNote) {
                 keyboardSynth.triggerRelease(activeNote);
                 activeNote = null;
@@ -271,12 +259,8 @@
         }
         updateAudio();
         canvasCtx.restore();
-
-        // 다음 프레임에 루프 계속
-        requestAnimationFrame(renderLoop);
     }
     
-    // --- Processing & Control Functions ---
     function processFace(landmarks) {
         positionHat(landmarks);
         const upperLip = landmarks[13], lowerLip = landmarks[14], leftCheek = landmarks[234], rightCheek = landmarks[454];
@@ -314,6 +298,7 @@
     }
     
     function updateAudio() {
+        if(!isAppInitialized) return;
         const volume = -35 + (mouthOpenness * 20);
         ambientSynth.volume.rampTo(volume, 0.1);
     }
