@@ -9,8 +9,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     
     <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
@@ -63,11 +61,7 @@
             color: #d63031;
         }
 
-        #hat-panel .hat-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
+        #hat-panel .hat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         #hat-panel img {
             width: 100%;
             cursor: pointer;
@@ -95,7 +89,6 @@
             position: absolute;
             width: 150px;
             transform-origin: center bottom;
-            transition: transform 0.1s linear, opacity 0.1s linear;
             pointer-events: none;
             image-rendering: pixelated;
             z-index: 100;
@@ -148,7 +141,7 @@
                 <div class="hat-grid" id="hat-grid-container"></div>
             </div>
             <div id="video-container">
-                <video id="webcam" playsinline style="display: none;"></video>
+                <video id="webcam" playsinline></video>
                 <canvas id="output-canvas"></canvas>
                 <img id="hat-image" src="" style="display: none;" alt="User Hat"/>
             </div>
@@ -160,7 +153,6 @@
     </div>
 
 <script>
-    // --- DOM Elements ---
     const startOverlay = document.getElementById('start-overlay');
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('output-canvas');
@@ -169,15 +161,12 @@
     const hatGridContainer = document.getElementById('hat-grid-container');
     const filterList = document.getElementById('filter-list');
 
-    // --- MediaPipe and Audio Instances ---
-    let faceMesh, hands, camera, drawingUtils;
+    let faceMesh, hands, drawingUtils;
     let ambientSynth, keyboardSynth, reverb, filterLFO;
     
-    // --- State & Config ---
     let isAppInitialized = false;
     let mouthOpenness = 0;
     let activeNote = null;
-    const NUM_NOTE_ZONES = 7;
     const scale = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
     const hats = [
         { name: 'Santa', file: 'hats/santa_hat.png' }, { name: 'Wizard', file: 'hats/wizard_hat.png' },
@@ -186,25 +175,20 @@
     const soundFilters = {
         'Waves':  { noise: 'brown', filterType: 'lowpass', baseFreq: 150, lfoFreq: 0.3, lfoDepth: 100 },
         'Windy':  { noise: 'pink', filterType: 'bandpass', baseFreq: 1500, lfoFreq: 5, lfoDepth: 800 },
-        'Mist':   { noise: 'white', filterType: 'highpass', baseFreq: 4000, lfoFreq: 0.1, lfoDepth: 500 },
-        'Drizzle':{ noise: 'white', filterType: 'lowpass', baseFreq: 5000, lfoFreq: 15, lfoDepth: 2000 },
     };
 
-    // --- Main Initialization Trigger ---
     startOverlay.addEventListener('click', async () => {
         if (isAppInitialized) return;
-        
+        isAppInitialized = true;
+
         startOverlay.style.opacity = '0';
         setTimeout(() => startOverlay.style.display = 'none', 300);
 
         await setupAudio();
         setupMediaPipe();
-        startVideo();
-        
-        isAppInitialized = true;
+        await startCamera();
     });
 
-    // --- Setup Functions ---
     async function setupAudio() {
         await Tone.start();
         reverb = new Tone.Reverb({ decay: 4, wet: 0.4 }).toDestination();
@@ -247,31 +231,39 @@
         hands.onResults(onResults);
     }
     
-    function startVideo() {
-        camera = new Camera(videoElement, {
-            onFrame: async () => {
-                if (canvasElement.width !== videoElement.clientWidth) {
-                    canvasElement.width = videoElement.clientWidth;
-                    canvasElement.height = videoElement.clientHeight;
-                }
-                await faceMesh.send({ image: videoElement });
-                await hands.send({ image: videoElement });
-            },
-            width: 640, height: 480
-        });
-        camera.start();
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 480 }
+            });
+            videoElement.srcObject = stream;
+            videoElement.addEventListener('loadedmetadata', () => {
+                videoElement.play();
+                // Match canvas size to video aspect ratio
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                requestAnimationFrame(detectionLoop);
+            });
+        } catch (err) {
+            console.error("Camera access denied:", err);
+            startOverlay.innerHTML = "<p>Camera Access Denied!</p>";
+            startOverlay.style.display = "flex";
+            startOverlay.style.opacity = "1";
+        }
     }
-    
-    // --- MediaPipe Results Handler ---
+
+    async function detectionLoop() {
+        if (videoElement.paused || videoElement.ended) return;
+        await faceMesh.send({ image: videoElement });
+        await hands.send({ image: videoElement });
+        requestAnimationFrame(detectionLoop);
+    }
+
     function onResults(results) {
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
 
-        // *** THIS IS THE CRITICAL FIX ***
-        // Draw the video frame first
-        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-        // Then draw the landmarks on top
         if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
             drawingUtils.drawConnectors(results.multiFaceLandmarks[0], FaceMesh.FACEMESH_TESSELATION, {color: '#FFFFFF', lineWidth: 1});
             processFace(results.multiFaceLandmarks[0]);
@@ -279,17 +271,15 @@
         if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
             drawingUtils.drawConnectors(results.multiHandLandmarks[0], Hands.HAND_CONNECTIONS, {color: '#FFFFFF', lineWidth: 2});
             drawingUtils.drawLandmarks(results.multiHandLandmarks[0], {color: '#FFFFFF', radius: 3});
-            if(isAppInitialized) processHand(results.multiHandLandmarks[0]);
+            processHand(results.multiHandLandmarks[0]);
         } else if (activeNote) {
             keyboardSynth.triggerRelease(activeNote);
             activeNote = null;
         }
-
-        if (isAppInitialized) updateAudio();
+        updateAudio();
         canvasCtx.restore();
     }
 
-    // --- Processing & Control Functions ---
     function processFace(landmarks) {
         positionHat(landmarks);
         const upperLip = landmarks[13], lowerLip = landmarks[14], leftCheek = landmarks[234], rightCheek = landmarks[454];
@@ -302,10 +292,9 @@
         if (!hatImage.src || hatImage.style.display === 'none') return;
         const forehead = landmarks[10], leftTemple = landmarks[227], rightTemple = landmarks[447];
         if (forehead && leftTemple && rightTemple) {
-            const videoRect = videoElement.getBoundingClientRect();
             const headWidth = Math.hypot(leftTemple.x - rightTemple.x, leftTemple.y - rightTemple.y);
-            const angle = Math.atan2((rightTemple.y - leftTemple.y) * videoRect.height, (rightTemple.x - leftTemple.x) * videoRect.width);
-            hatImage.style.width = `${headWidth * 1.5 * videoRect.width}px`;
+            const angle = Math.atan2((rightTemple.y - leftTemple.y), (rightTemple.x - leftTemple.x));
+            hatImage.style.width = `${headWidth * 1.5 * canvasElement.width}px`;
             hatImage.style.left = `${forehead.x * 100}%`;
             hatImage.style.top = `${forehead.y * 100}%`;
             hatImage.style.transform = `translate(-50%, -100%) rotate(${angle}rad)`;
@@ -313,7 +302,8 @@
     }
 
     function processHand(landmarks) {
-        const indexTip = landmarks[8], zoneWidth = 1.0 / NUM_NOTE_ZONES;
+        const indexTip = landmarks[8];
+        const zoneWidth = 1.0 / scale.length;
         const noteIndex = Math.floor(indexTip.x / zoneWidth);
         const noteToPlay = scale[noteIndex];
         if (noteToPlay && noteToPlay !== activeNote) {
@@ -332,7 +322,7 @@
     }
     
     window.selectHat = (hatFile) => {
-        hatImage.src = hatFile ? hatFile : '';
+        hatImage.src = hatFile || '';
         hatImage.style.display = hatFile ? 'block' : 'none';
     };
     
@@ -348,7 +338,6 @@
         document.querySelectorAll('#filter-list li').forEach(li => li.classList.toggle('active', li.textContent === name));
     };
 
-    // --- Run on page load ---
     setupUI();
 </script>
 </body>
