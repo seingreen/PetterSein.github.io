@@ -1,18 +1,15 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pixel Face & Hand Synth (1000x350)</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <title>Mystic Chime Synth</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     
-    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    
     <style>
         body {
             display: flex;
@@ -32,293 +29,644 @@
             box-shadow: 0 10px 0 #e8a5b4;
             padding: 15px;
             box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             position: relative;
         }
-        #main-content {
-            display: grid;
-            grid-template-columns: 180px 1fr 180px;
-            gap: 15px;
-            width: 100%;
-            height: 100%;
-        }
-        .panel {
-            background-color: rgba(255, 255, 255, 0.4);
-            border-radius: 10px;
-            padding: 15px;
-            box-sizing: border-box;
-            color: #4a4a4a;
-            overflow-y: auto;
-        }
-        .panel::-webkit-scrollbar { width: 8px; }
-        .panel::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.3); border-radius: 4px; }
-        .panel h3 {
-            margin: 0 0 15px 0;
-            font-size: 12px;
-            text-align: center;
-            color: #d63031;
-        }
-        #hat-panel .hat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        #hat-panel img {
-            width: 100%;
-            cursor: pointer;
-            transition: transform 0.1s;
-            image-rendering: pixelated;
-        }
-        #hat-panel img:hover { transform: scale(1.1); }
         #video-container {
             position: relative;
+            width: 100%;
+            height: 100%;
             background-color: #333;
             border-radius: 10px;
             overflow: hidden;
         }
-        /* 수정됨: 비디오와 캔버스를 겹치도록 설정 */
-        #webcam, #output-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
+        #output-canvas {
             width: 100%;
             height: 100%;
             transform: scaleX(-1);
-            object-fit: cover;
+            object-fit: contain;
+            display: block;
+            background-color: #333;
         }
-        #hat-image {
+        #video-element {
+            display: none;
+        }
+        #startButton {
             position: absolute;
-            width: 150px;
-            transform-origin: center bottom;
-            pointer-events: none;
-            image-rendering: pixelated;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             z-index: 100;
-        }
-        #filter-panel ul { list-style: none; padding: 0; margin: 0; }
-        #filter-panel li {
-            margin-bottom: 12px;
+            padding: 20px 40px;
+            font-size: 16px;
+            font-weight: bold;
             cursor: pointer;
-            font-size: 11px;
-            transition: color 0.2s;
-        }
-        #filter-panel li:before { content: '- '; }
-        #filter-panel li:hover, #filter-panel li.active { color: #0984e3; }
-        #start-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.6);
+            border-radius: 10px;
+            border: 3px solid white;
+            background: rgba(0,0,0,0.7);
             color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 999;
-            cursor: pointer;
-            border-radius: 15px;
-            transition: opacity 0.3s;
+            text-shadow: 2px 2px #000;
         }
-        #start-overlay p {
-            font-size: 20px;
-            text-shadow: 3px 3px #000;
-            padding: 20px;
-            border: 3px dashed white;
+        #startButton:hover {
+            background: rgba(0,0,0,0.9);
+        }
+        #changeCameraButton {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            padding: 10px 15px;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 2px solid white;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            font-family: inherit;
+        }
+        #cameraList {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            z-index: 101;
+            background: rgba(0,0,0,0.9);
+            border-radius: 5px;
+            padding: 10px;
+            color: white;
+            font-size: 10px;
+            max-width: 300px;
+        }
+        .camera-option {
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 3px;
+            margin: 2px 0;
+        }
+        .camera-option:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: radial-gradient(circle, rgba(255,255,255,0.9), rgba(255,255,255,0.3));
+            border-radius: 50%;
+            pointer-events: none;
+            box-shadow: 0 0 8px rgba(255,255,255,0.8), 0 0 16px rgba(255,255,255,0.4);
+            animation: lightSparkle 2s ease-out forwards;
+        }
+        .particle::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: radial-gradient(circle, rgba(255,255,255,0.2), transparent);
+            border-radius: 50%;
+            animation: shimmer 2s ease-out forwards;
+        }
+        @keyframes lightSparkle {
+            0% {
+                opacity: 1;
+                transform: scale(0);
+            }
+            20% {
+                opacity: 1;
+                transform: scale(1.2);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(0.3) translate(var(--dx), var(--dy));
+            }
+        }
+        @keyframes shimmer {
+            0% {
+                opacity: 0;
+                transform: scale(0);
+            }
+            50% {
+                opacity: 0.6;
+                transform: scale(1.5);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(2);
+            }
         }
     </style>
 </head>
 <body>
     <div id="app-container">
-        <div id="start-overlay"><p>Click to Start</p></div>
-        <div id="main-content">
-            <div id="hat-panel" class="panel">
-                <h3>Pick a hat!</h3>
-                <div class="hat-grid" id="hat-grid-container"></div>
-            </div>
-            <div id="video-container">
-                <video id="webcam"></video>
-                <canvas id="output-canvas"></canvas>
-                <img id="hat-image" src="" style="display: none;" alt="User Hat"/>
-            </div>
-            <div id="filter-panel" class="panel">
-                <h3>Filters to try!</h3>
-                <ul id="filter-list"></ul>
-            </div>
+        <div id="video-container">
+            <video id="video-element" autoplay muted playsinline></video>
+            <canvas id="output-canvas"></canvas>
         </div>
+        <button id="startButton">Click to Start</button>
+        <button id="changeCameraButton" style="display: none;">Change Camera</button>
+        <div id="status" style="display: none;"></div>
+        <div id="cameraList" style="display: none;"></div>
     </div>
-<script>
-    const startOverlay = document.getElementById('start-overlay');
-    const videoElement = document.getElementById('webcam');
-    const canvasElement = document.getElementById('output-canvas');
-    const canvasCtx = canvasElement.getContext('2d');
-    const hatImage = document.getElementById('hat-image');
-    const hatGridContainer = document.getElementById('hat-grid-container');
-    const filterList = document.getElementById('filter-list');
-    
-    let faceMesh, hands, drawingUtils, camera;
-    let isAppInitialized = false;
-    let mouthOpenness = 0, activeNote = null;
 
-    let ambientSynth, keyboardSynth, reverb, filterLFO;
-    const scale = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4'];
-    const hats = [{ name: 'Santa', file: 'hats/santa_hat.png' }, { name: 'Wizard', file: 'hats/wizard_hat.png' }, { name: 'Tophat', file: 'hats/top_hat.png' }, { name: 'Beanie', file: 'hats/beanie.png' }];
-    const soundFilters = { 'Waves':  { noise: 'brown', filterType: 'lowpass', baseFreq: 150, lfoFreq: 0.3, lfoDepth: 100 }, 'Windy':  { noise: 'pink', filterType: 'bandpass', baseFreq: 1500, lfoFreq: 5, lfoDepth: 800 } };
+<script>
+    const startButton = document.getElementById('startButton');
+    const changeCameraButton = document.getElementById('changeCameraButton');
+    const cameraListDiv = document.getElementById('cameraList');
+    const canvasElement = document.getElementById('output-canvas');
+    const videoElement = document.getElementById('video-element');
+    const statusElement = document.getElementById('status');
+    const canvasCtx = canvasElement.getContext('2d');
     
-    startOverlay.addEventListener('click', async () => {
-        if (isAppInitialized) return;
-        isAppInitialized = true;
-        startOverlay.style.opacity = '0';
-        setTimeout(() => startOverlay.style.display = 'none', 300);
-        await setupAudio();
-        setupMediaPipe();
-        startCamera();
+    let audioContext;
+    let masterVolume;
+    let reverbNode;
+    let hands;
+    let camera;
+    let isRunning = false;
+    
+    const chimeNotes = {
+        'C5': 523.25,
+        'D5': 587.33,
+        'E5': 659.25,
+        'G5': 783.99,
+        'A5': 880.00,
+        'C6': 1046.50
+    };
+    const chimeScale = Object.values(chimeNotes);
+    
+    let lastIndexTipPosition = null;
+    let canTriggerSound = true;
+    let currentStream = null;
+    let availableCameras = [];
+
+    function log(message) {
+        console.log(message);
+        statusElement.textContent = message;
+    }
+
+    changeCameraButton.addEventListener('click', async () => {
+        if (availableCameras.length === 0) {
+            await loadCameraList();
+        }
+        toggleCameraList();
+    });
+
+    async function loadCameraList() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            availableCameras = devices.filter(device => device.kind === 'videoinput');
+            displayCameraList();
+        } catch (error) {
+            log('Failed to load camera list');
+        }
+    }
+
+    function displayCameraList() {
+        cameraListDiv.innerHTML = '';
+        availableCameras.forEach((camera, index) => {
+            const div = document.createElement('div');
+            div.className = 'camera-option';
+            div.textContent = camera.label || `Camera ${index + 1}`;
+            div.addEventListener('click', () => selectCamera(camera.deviceId));
+            cameraListDiv.appendChild(div);
+        });
+    }
+
+    function toggleCameraList() {
+        cameraListDiv.style.display = cameraListDiv.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function selectCamera(deviceId) {
+        try {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+            
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    deviceId: { exact: deviceId },
+                    width: { ideal: 1280, min: 640 },
+                    height: { ideal: 720, min: 480 }
+                }
+            });
+            
+            currentStream = stream;
+            videoElement.srcObject = stream;
+            cameraListDiv.style.display = 'none';
+            log('Camera changed successfully');
+            
+        } catch (error) {
+            log('Failed to switch camera');
+        }
+    }
+
+    startButton.addEventListener('click', async () => {
+        if (isRunning) return;
+        
+        startButton.textContent = 'Loading...';
+        startButton.disabled = true;
+        statusElement.style.display = 'block';
+
+        try {
+            log('Initializing audio system...');
+            await setupAudio();
+            
+            log('Setting up MediaPipe...');
+            await setupMediaPipe();
+            
+            log('Starting camera...');
+            await startCamera();
+            
+            log('Ready! Move your hands in front of the camera.');
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, 3000);
+            startButton.style.display = 'none';
+            changeCameraButton.style.display = 'block';
+            isRunning = true;
+
+        } catch (error) {
+            log(`Error: ${error.message}`);
+            startButton.textContent = 'Retry';
+            startButton.disabled = false;
+        }
     });
 
     async function setupAudio() {
-        await Tone.start();
-        reverb = new Tone.Reverb({ decay: 4, wet: 0.4 }).toDestination();
-        const filter = new Tone.Filter(200, 'lowpass').connect(reverb);
-        filterLFO = new Tone.LFO(0.2, 100, 500).connect(filter.frequency).start();
-        ambientSynth = new Tone.Noise('brown').connect(filter).start();
-        ambientSynth.volume.value = -25;
-        keyboardSynth = new Tone.Synth({ oscillator: { type: 'triangle8' }, envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 }, volume: -6 }).connect(reverb);
-        applySoundFilter('Waves');
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            
+            masterVolume = audioContext.createGain();
+            masterVolume.gain.value = 0.3;
+            
+            reverbNode = audioContext.createConvolver();
+            reverbNode.buffer = createReverbBuffer();
+            
+            reverbNode.connect(masterVolume);
+            masterVolume.connect(audioContext.destination);
+            
+        } catch (error) {
+            throw new Error('Audio initialization failed: ' + error.message);
+        }
     }
 
-    function setupUI() {
-        hats.forEach(hat => {
-            const img = document.createElement('img');
-            img.src = hat.file;
-            img.alt = hat.name;
-            img.onclick = () => selectHat(hat.file);
-            hatGridContainer.appendChild(img);
-        });
-        Object.keys(soundFilters).forEach(name => {
-            const li = document.createElement('li');
-            li.textContent = name;
-            li.onclick = () => applySoundFilter(name);
-            filterList.appendChild(li);
-        });
-        if(filterList.querySelector('li')) filterList.querySelector('li').classList.add('active');
-    }
-    setupUI();
-
-    function setupMediaPipe() {
-        drawingUtils = new DrawingUtils(canvasCtx);
-        faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
-        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-        faceMesh.onResults(onResults);
+    function createReverbBuffer() {
+        const length = audioContext.sampleRate * 2;
+        const buffer = audioContext.createBuffer(2, length, audioContext.sampleRate);
         
-        hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-        hands.onResults(onResults);
+        for (let channel = 0; channel < 2; channel++) {
+            const channelData = buffer.getChannelData(channel);
+            for (let i = 0; i < length; i++) {
+                channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+            }
+        }
+        return buffer;
     }
 
-    function startCamera() {
-        camera = new Camera(videoElement, {
-            onFrame: async () => {
-                // 캔버스 크기를 비디오 크기에 맞춤
-                if (canvasElement.width !== videoElement.videoWidth) {
-                   canvasElement.width = videoElement.videoWidth;
-                   canvasElement.height = videoElement.videoHeight;
+    async function setupMediaPipe() {
+        return new Promise((resolve, reject) => {
+            try {
+                if (typeof Hands === 'undefined') {
+                    throw new Error('MediaPipe Hands library not loaded');
                 }
-                await faceMesh.send({ image: videoElement });
-                await hands.send({ image: videoElement });
-            },
-            width: 640, height: 480
+                
+                hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                    }
+                });
+                
+                hands.setOptions({
+                    maxNumHands: 2,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.7,
+                    minTrackingConfidence: 0.5
+                });
+                
+                hands.onResults(onResults);
+                resolve();
+                
+            } catch (error) {
+                reject(new Error('MediaPipe setup failed: ' + error.message));
+            }
         });
-        camera.start().catch(err => {
-            console.error("Camera access denied:", err);
-            startOverlay.innerHTML = "<p>Camera Access Denied!</p>";
-            startOverlay.style.display = "flex";
-            startOverlay.style.opacity = "1";
-        });
+    }
+
+    async function startCamera() {
+        try {
+            if (typeof Camera === 'undefined') {
+                await startVideoStream();
+            } else {
+                camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        await hands.send({image: videoElement});
+                    },
+                    width: 1280,
+                    height: 720
+                });
+                await camera.start();
+            }
+            
+        } catch (error) {
+            throw new Error('Camera start failed: ' + error.message);
+        }
+    }
+
+    async function startVideoStream() {
+        try {
+            // First, try to get available devices and prefer built-in camera
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            
+            let deviceId = null;
+            // Look for built-in camera (usually contains 'built-in' or 'facetime')
+            const builtInCamera = videoDevices.find(device => 
+                device.label.toLowerCase().includes('built-in') || 
+                device.label.toLowerCase().includes('facetime') ||
+                device.label.toLowerCase().includes('integrated')
+            );
+            
+            if (builtInCamera) {
+                deviceId = builtInCamera.deviceId;
+            }
+            
+            const constraints = {
+                video: { 
+                    width: { ideal: 1280, min: 640 },
+                    height: { ideal: 720, min: 480 },
+                    aspectRatio: { ideal: 16/9 },
+                    facingMode: 'user'
+                }
+            };
+            
+            // Add device constraint if we found a built-in camera
+            if (deviceId) {
+                constraints.video.deviceId = { ideal: deviceId };
+            }
+            
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            currentStream = stream;
+            
+            videoElement.srcObject = stream;
+            
+            return new Promise((resolve, reject) => {
+                videoElement.addEventListener('loadedmetadata', () => {
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                    log(`Camera resolution: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+                    
+                    processFrame();
+                    resolve();
+                });
+                
+                videoElement.addEventListener('error', reject);
+                setTimeout(() => reject(new Error('Camera connection timeout')), 10000);
+            });
+            
+        } catch (error) {
+            if (error.name === 'NotAllowedError') {
+                throw new Error('Camera permission denied');
+            } else if (error.name === 'NotFoundError') {
+                throw new Error('Camera not found');
+            } else {
+                throw new Error('Camera access error: ' + error.message);
+            }
+        }
+    }
+
+    async function processFrame() {
+        if (!isRunning) return;
+        
+        if (videoElement.readyState >= 2) {
+            await hands.send({image: videoElement});
+        }
+        
+        requestAnimationFrame(processFrame);
     }
 
     function onResults(results) {
-        // 비디오 위에 그림을 그리기 전에 캔버스를 깨끗하게 지웁니다.
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-        // 수정됨: 더 이상 캔버스에 비디오를 그리지 않습니다.
-        // canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-        // 얼굴 결과 처리 및 그리기
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
-            const landmarks = results.multiFaceLandmarks[0];
-            drawingUtils.drawConnectors(landmarks, FaceMesh.FACEMESH_TESSELATION, {color: '#FFFFFF', lineWidth: 1});
-            processFace(landmarks);
-        }
-
-        // 손 결과 처리 및 그리기
-        if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
-            const landmarks = results.multiHandLandmarks[0];
-            drawingUtils.drawConnectors(landmarks, Hands.HAND_CONNECTIONS, {color: '#FFFFFF', lineWidth: 2});
-            drawingUtils.drawLandmarks(landmarks, {color: '#FFFFFF', radius: 3});
-            processHand(landmarks);
-        } else {
-            if (activeNote) {
-                keyboardSynth.triggerRelease(activeNote);
-                activeNote = null;
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+        
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            for (const landmarks of results.multiHandLandmarks) {
+                // Draw hand skeleton manually
+                drawHandSkeleton(landmarks);
+                drawHandLandmarks(landmarks);
+                processHandGesture(landmarks);
             }
+        } else {
+            lastIndexTipPosition = null;
         }
-        updateAudio();
+        
         canvasCtx.restore();
     }
-    
-    function processFace(landmarks) {
-        positionHat(landmarks);
-        const upperLip = landmarks[13], lowerLip = landmarks[14], leftCheek = landmarks[234], rightCheek = landmarks[454];
-        const mouthDist = Math.hypot(upperLip.x - lowerLip.x, upperLip.y - lowerLip.y);
-        const faceWidth = Math.hypot(leftCheek.x - rightCheek.x, leftCheek.y - rightCheek.y);
-        mouthOpenness = Math.min(1.0, Math.max(0.0, (mouthDist / faceWidth - 0.05) * 5));
+
+    function drawHandSkeleton(landmarks) {
+        const connections = [
+            [0, 1], [1, 2], [2, 3], [3, 4],
+            [0, 5], [5, 6], [6, 7], [7, 8],
+            [0, 9], [9, 10], [10, 11], [11, 12],
+            [0, 13], [13, 14], [14, 15], [15, 16],
+            [0, 17], [17, 18], [18, 19], [19, 20],
+            [5, 9], [9, 13], [13, 17]
+        ];
+
+        canvasCtx.strokeStyle = 'rgba(0, 255, 255, 0.85)';
+        canvasCtx.lineWidth = 1.0;
+        canvasCtx.lineCap = 'round';
+        canvasCtx.lineJoin = 'round';
+
+        connections.forEach(([start, end]) => {
+            const startPoint = landmarks[start];
+            const endPoint = landmarks[end];
+            
+            if (startPoint && endPoint) {
+                canvasCtx.beginPath();
+                canvasCtx.moveTo(
+                    startPoint.x * canvasElement.width,
+                    startPoint.y * canvasElement.height
+                );
+                canvasCtx.lineTo(
+                    endPoint.x * canvasElement.width,
+                    endPoint.y * canvasElement.height
+                );
+                canvasCtx.stroke();
+            }
+        });
     }
 
-    function positionHat(landmarks) {
-        if (!hatImage.src || hatImage.style.display === 'none') return;
-        const forehead = landmarks[10], leftTemple = landmarks[227], rightTemple = landmarks[447];
-        if (forehead && leftTemple && rightTemple) {
-            const headWidth = Math.hypot(leftTemple.x - rightTemple.x, leftTemple.y - rightTemple.y);
-            const angle = Math.atan2((rightTemple.y - leftTemple.y) * canvasElement.height, (rightTemple.x - leftTemple.x) * canvasElement.width);
-            hatImage.style.width = `${headWidth * 1.5 * canvasElement.width}px`;
-            hatImage.style.left = `${forehead.x * 100}%`;
-            hatImage.style.top = `${forehead.y * 100}%`;
-            hatImage.style.transform = `translate(-50%, -100%) rotate(${angle}rad)`;
-        }
+    function drawHandLandmarks(landmarks) {
+        canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        canvasCtx.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+        canvasCtx.lineWidth = 0.5;
+        
+        landmarks.forEach((landmark) => {
+            const x = landmark.x * canvasElement.width;
+            const y = landmark.y * canvasElement.height;
+            
+            canvasCtx.beginPath();
+            canvasCtx.arc(x, y, 2, 0, 2 * Math.PI);
+            canvasCtx.fill();
+            canvasCtx.stroke();
+        });
     }
 
-    function processHand(landmarks) {
+    function processHandGesture(landmarks) {
         const indexTip = landmarks[8];
-        const zoneWidth = 1.0 / scale.length;
-        const noteIndex = Math.floor(indexTip.x / zoneWidth);
-        const noteToPlay = scale[noteIndex];
-        if (noteToPlay && noteToPlay !== activeNote) {
-            if (activeNote) keyboardSynth.triggerRelease(activeNote);
-            keyboardSynth.triggerAttack(noteToPlay);
-            activeNote = noteToPlay;
-        } else if (!noteToPlay && activeNote) {
-             keyboardSynth.triggerRelease(activeNote);
-             activeNote = null;
+        if (!indexTip) return;
+        
+        const x = indexTip.x * canvasElement.width;
+        const y = indexTip.y * canvasElement.height;
+        
+        canvasCtx.save();
+        
+        // Outer ring
+        canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        canvasCtx.lineWidth = 1.5;
+        canvasCtx.shadowColor = 'rgba(255, 255, 255, 0.4)';
+        canvasCtx.shadowBlur = 8;
+        
+        canvasCtx.beginPath();
+        canvasCtx.arc(x, y, 6, 0, 2 * Math.PI);
+        canvasCtx.stroke();
+        
+        // Inner dot
+        canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        canvasCtx.shadowBlur = 4;
+        
+        canvasCtx.beginPath();
+        canvasCtx.arc(x, y, 2.5, 0, 2 * Math.PI);
+        canvasCtx.fill();
+        
+        canvasCtx.restore();
+        
+        if (lastIndexTipPosition && canTriggerSound) {
+            const velocity = Math.hypot(
+                indexTip.x - lastIndexTipPosition.x,
+                indexTip.y - lastIndexTipPosition.y
+            );
+            
+            if (velocity > 0.08) {
+                playChimeSound();
+                createSparkleEffect(x, y);
+                canTriggerSound = false;
+                setTimeout(() => { canTriggerSound = true; }, 400);
+            }
+        }
+        
+        lastIndexTipPosition = { x: indexTip.x, y: indexTip.y };
+    }
+
+    function createSparkleEffect(x, y) {
+        const rect = canvasElement.getBoundingClientRect();
+        const absoluteX = rect.left + x;
+        const absoluteY = rect.top + y;
+        
+        for (let i = 0; i < 6; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            
+            const angle = (Math.PI * 2 * i) / 6 + Math.random() * 0.5;
+            const distance = 15 + Math.random() * 20;
+            const dx = Math.cos(angle) * distance;
+            const dy = Math.sin(angle) * distance;
+            
+            particle.style.left = (absoluteX - 2) + 'px';
+            particle.style.top = (absoluteY - 2) + 'px';
+            particle.style.setProperty('--dx', dx + 'px');
+            particle.style.setProperty('--dy', dy + 'px');
+            particle.style.animationDelay = (i * 0.05) + 's';
+            
+            document.body.appendChild(particle);
+            
+            setTimeout(() => {
+                if (particle.parentNode) {
+                    particle.parentNode.removeChild(particle);
+                }
+            }, 2000);
         }
     }
-    
-    function updateAudio() {
-        if(!isAppInitialized) return;
-        const volume = -35 + (mouthOpenness * 20);
-        ambientSynth.volume.rampTo(volume, 0.1);
+
+    function playChimeSound() {
+        if (!audioContext || !reverbNode) return;
+        
+        try {
+            const currentTime = audioContext.currentTime;
+            const numNotes = Math.floor(Math.random() * 4) + 3;
+            
+            for (let i = 0; i < numNotes; i++) {
+                const frequency = chimeScale[Math.floor(Math.random() * chimeScale.length)];
+                const startTime = currentTime + i * 0.12;
+                
+                createChimeNote(frequency, startTime);
+            }
+            
+        } catch (error) {
+            console.log('Sound playback error: ' + error.message);
+        }
     }
-    
-    window.selectHat = (hatFile) => {
-        hatImage.src = hatFile || '';
-        hatImage.style.display = hatFile ? 'block' : 'none';
-    };
-    
-    window.applySoundFilter = (name) => {
-        const settings = soundFilters[name];
-        if (!settings || !isAppInitialized) return;
-        ambientSynth.noise.type = settings.noise;
-        ambientSynth.filter.type = settings.filterType;
-        ambientSynth.filter.frequency.value = settings.baseFreq;
-        filterLFO.frequency.value = settings.lfoFreq;
-        filterLFO.min = settings.baseFreq - settings.lfoDepth / 2;
-        filterLFO.max = settings.baseFreq + settings.lfoDepth / 2;
-        document.querySelectorAll('#filter-list li').forEach(li => li.classList.toggle('active', li.textContent === name));
-    };
+
+    function createChimeNote(frequency, startTime) {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        const modulator = audioContext.createOscillator();
+        const modGain = audioContext.createGain();
+        
+        modulator.frequency.value = frequency * 2.5;
+        modGain.gain.value = 40;
+        
+        oscillator.type = 'triangle';
+        oscillator.frequency.value = frequency;
+        
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.4, startTime + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.1, startTime + 0.4);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + 2.0);
+        
+        modulator.connect(modGain);
+        modGain.connect(oscillator.frequency);
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(reverbNode);
+        
+        oscillator.start(startTime);
+        modulator.start(startTime);
+        oscillator.stop(startTime + 2.0);
+        modulator.stop(startTime + 2.0);
+    }
+
+    window.addEventListener('beforeunload', () => {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (videoElement.srcObject) {
+            const stream = videoElement.srcObject;
+            const tracks = stream.getTracks();
+            tracks.forEach(track => track.stop());
+        }
+        if (audioContext) {
+            audioContext.close();
+        }
+    });
 </script>
 </body>
 </html>
